@@ -1,5 +1,6 @@
 import Livro from './book.js'
 import pool from '../db.js'
+import Loan from './loan.js'
 
 export default class Biblioteca {
     constructor() {
@@ -10,25 +11,25 @@ export default class Biblioteca {
         if (!title || !author || !yearPublished || !userId) {
             return console.log('Argumentos inválidos!');
         }
-    
+
         try {
             const newBook = new Livro(title, author, yearPublished, true);
-    
+
             const connection = await pool.getConnection();
             const query = `
                 INSERT INTO livros (id, title, author, yearPublished, isAvailable, added_by_user_id)
                 VALUES (?, ?, ?, ?, ?, ?)
             `;
-    
+
             await connection.execute(query, [
-                newBook._id, 
+                newBook._id,
                 newBook._title,
                 newBook._author,
                 newBook._yearPublished,
                 newBook._avaible,
                 userId,
             ]);
-    
+
             connection.release();
             this.livros.push(newBook);
             console.log('Sucesso: Livro adicionado à estante.');
@@ -102,6 +103,50 @@ export default class Biblioteca {
             }
         } catch (error) {
             console.error('Erro ao listar os livros:', error);
+        }
+    }
+
+    async loanBook(id, userId) {
+        try {
+            const connection = await pool.getConnection();
+    
+            const [rows] = await connection.query(
+                'SELECT * FROM livros WHERE id = ? AND isAvailable = 1',
+                [id]
+            );
+    
+            if (rows.length === 0) {
+                console.log(`Livro com ID ${id} não encontrado ou não disponível.`);
+                throw new Error('Livro não encontrado ou não disponível para empréstimo.');
+            }
+    
+            // Atualizar disponibilidade do livro
+            await connection.execute('UPDATE livros SET isAvailable = 0 WHERE id = ?', [id]);
+    
+            // Criar novo empréstimo
+            const loan = new Loan(id, userId);
+    
+            const query = `
+                INSERT INTO emprestimos (id, livro_id, user_id, data_emprestimo, data_devolucao)
+                VALUES (?, ?, ?, ?, ?)
+            `;
+    
+            await connection.execute(query, [
+                loan.id, 
+                loan.livroId, 
+                loan.userId, 
+                loan.dataEmprestimo, 
+                loan.dataDevolucao
+            ]);
+    
+            connection.release();
+    
+            console.log('Empréstimo registrado com sucesso.');
+            return loan;
+    
+        } catch (error) {
+            console.error('Erro ao registrar empréstimo:', error);
+            throw error; // Re-throwing the error to be handled elsewhere if necessary
         }
     }
 }
